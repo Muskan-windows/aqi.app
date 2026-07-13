@@ -1,138 +1,94 @@
 import streamlit as st
 import pandas as pd
-from sklearn.linear_model import LinearRegression
+import matplotlib.pyplot as plt
+import numpy as np
 
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="AQI Predictor", layout="wide")
 
-# ---------------- TITLE ----------------
-st.title("🌍 AQI Guardian - Smart Air Quality Predictor")
+# TITLE
+st.title("🌍 AQI Prediction Dashboard")
+st.subheader("By Your Name")
 
-st.markdown("""
-Monitor air pollution, visualize trends, and predict AQI using Machine Learning.
-""")
+# OPTION
+option = st.radio("Choose Input Method", ["Upload Dataset", "Manual Input"])
 
-# ---------------- LOAD DATA ----------------
-@st.cache_data
-def load_data(file):
-    return pd.read_csv(file)
+df = None
 
-# Upload OR default
-uploaded_file = st.file_uploader("📂 Upload your dataset (optional)", type=["csv"])
+# FILE UPLOAD
+if option == "Upload Dataset":
+    uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
+    
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+        df.columns = df.columns.str.strip()
+        st.success("Dataset Loaded Successfully!")
 
-if uploaded_file:
-    df = load_data(uploaded_file)
+# MANUAL INPUT
 else:
-    df = load_data("aqi.csv")  # default file
+    pm25 = st.number_input("PM2.5")
+    pm10 = st.number_input("PM10")
+    no2 = st.number_input("NO2")
 
-# ---------------- BASIC CHECK ----------------
-if df is None or df.empty:
-    st.error("Dataset is empty ❌")
-    st.stop()
+# BUTTON
+if st.button("🚀 Predict AQI"):
 
-# Limit size for performance
-if len(df) > 2000:
-    df = df.sample(1000)
+    st.divider()
 
-# ---------------- CITY DROPDOWN ----------------
-if 'city' in df.columns:
-    city = st.selectbox("🏙️ Select City", df['city'].unique())
-    df_city = df[df['city'] == city]
-else:
-    df_city = df
+    # ---------- CASE 1: DATASET ----------
+    if df is not None:
 
-# ---------------- DATA PREVIEW ----------------
-with st.expander("📊 View Dataset"):
-    st.dataframe(df_city.head(50))
+        st.subheader("📊 Dataset Preview")
+        st.dataframe(df.head())
 
-# ---------------- AQI METRICS ----------------
-if 'aqi_index' in df_city.columns:
-    avg_aqi = df_city['aqi_index'].mean()
-    max_aqi = df_city['aqi_index'].max()
+        # SIMPLE AQI (example logic)
+        df["AQI"] = (df["PM2.5"] + df["PM10"] + df["NO2"]) / 3
 
-    col1, col2 = st.columns(2)
-    col1.metric("Average AQI", round(avg_aqi, 2))
-    col2.metric("Max AQI", int(max_aqi))
-
-    # AQI COLOR STATUS
-    if avg_aqi <= 50:
-        st.success("🟢 Good Air Quality")
-    elif avg_aqi <= 100:
-        st.warning("🟡 Moderate Air Quality")
-    else:
-        st.error("🔴 Unhealthy Air")
-
-# ---------------- GRAPHS ----------------
-st.subheader("📈 Pollution Trends")
-
-if all(col in df_city.columns for col in ['pm2_5', 'pm10']):
-    st.line_chart(df_city[['pm2_5', 'pm10']])
-
-# ---------------- MAP ----------------
-st.subheader("🗺️ Pollution Map")
-
-if 'lat' in df_city.columns and 'lon' in df_city.columns:
-    st.map(df_city[['lat', 'lon']])
-else:
-    st.info("Latitude & Longitude not available")
-
-# ---------------- MODEL ----------------
-@st.cache_data
-def train_model(X, y):
-    model = LinearRegression()
-    model.fit(X, y)
-    return model
-
-features = ['pm2_5', 'pm10', 'no2', 'co']
-target = 'aqi_index'
-
-if all(col in df_city.columns for col in features + [target]):
-
-    df_model = df_city[features + [target]].dropna()
-
-    if len(df_model) > 10:
-
-        X = df_model[features]
-        y = df_model[target]
-
-        model = train_model(X, y)
-
-        st.success("🤖 Model trained successfully")
-
-        # ---------------- PREDICTION ----------------
-        st.subheader("🔮 Predict AQI")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            pm25 = st.number_input("PM2.5", value=50.0)
-            pm10 = st.number_input("PM10", value=80.0)
-
-        with col2:
-            no2 = st.number_input("NO2", value=30.0)
-            co = st.number_input("CO", value=1.0)
-
-        if st.button("Predict AQI"):
-
-            input_data = [[pm25, pm10, no2, co]]
-            pred = model.predict(input_data)[0]
-
-            st.subheader(f"Predicted AQI: {round(pred, 2)}")
-
-            # Prediction AQI Status
-            if pred <= 50:
-                st.success("🟢 Good Air Quality")
-            elif pred <= 100:
-                st.warning("🟡 Moderate Air Quality")
+        # STATUS
+        def get_status(aqi):
+            if aqi < 50:
+                return "Good"
+            elif aqi < 100:
+                return "Moderate"
             else:
-                st.error("🔴 Unhealthy Air")
+                return "Poor"
 
+        df["Status"] = df["AQI"].apply(get_status)
+
+        # SHOW CURRENT AQI
+        latest_aqi = df["AQI"].iloc[-1]
+        st.metric("Current AQI", round(latest_aqi, 2))
+
+        # COLOR INDICATOR
+        if latest_aqi < 50:
+            st.success("🟢 Good Air Quality")
+        elif latest_aqi < 100:
+            st.warning("🟡 Moderate Air Quality")
+        else:
+            st.error("🔴 Poor Air Quality")
+
+        # GRAPH
+        st.subheader("📈 AQI Trend")
+
+        chart_data = df.reset_index().rename(columns={"index": "day", "AQI": "aqi"})
+
+        
+
+        # MAP
+        if "latitude" in df.columns and "longitude" in df.columns:
+            st.subheader("🗺️ Location Map")
+            st.map(df[["latitude", "longitude"]])
+
+    # ---------- CASE 2: MANUAL ----------
     else:
-        st.warning("Not enough data to train model")
+        aqi = (pm25 + pm10 + no2) / 3
 
-else:
-    st.warning("Required columns missing for ML")
+        st.metric("Predicted AQI", round(aqi, 2))
 
-# ---------------- FOOTER ----------------
-st.markdown("---")
-st.markdown("Built for Hackathon 🚀 | AI + Data for Cleaner Air")
+        if aqi < 50:
+            st.success("🟢 Good")
+        elif aqi < 100:
+            st.warning("🟡 Moderate")
+        else:
+            st.error("🔴 Poor")
+
+        st.info("Prediction based on simple formula (ML can be added)")
