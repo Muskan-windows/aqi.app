@@ -1,72 +1,138 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
 
-st.title("🌍 AQI Monitoring Dashboard")
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(layout="wide")
 
-# ---- AQI CATEGORY FUNCTION ----
-def get_aqi_category(aqi):
-    if aqi <= 50:
-        return "Good 😊"
-    elif aqi <= 100:
-        return "Moderate 😐"
-    elif aqi <= 200:
-        return "Unhealthy 😷"
-    elif aqi <= 300:
-        return "Very Unhealthy 🤢"
-    else:
-        return "Hazardous ☠️"
+# ---------------- TITLE ----------------
+st.title("🌍 AQI Guardian - Smart Air Quality Predictor")
 
-# ---- FILE UPLOAD ----
-uploaded_file = st.file_uploader("Upload CSV (optional)", type=["csv"])
+st.markdown("""
+Monitor air pollution, visualize trends, and predict AQI using Machine Learning.
+""")
 
-df = None
+# ---------------- LOAD DATA ----------------
+@st.cache_data
+def load_data(file):
+    return pd.read_csv(file)
+
+# Upload OR default
+uploaded_file = st.file_uploader("📂 Upload your dataset (optional)", type=["csv"])
 
 if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.success("✅ File uploaded successfully!")
+    df = load_data(uploaded_file)
+else:
+    df = load_data("aqi.csv")  # default file
 
-# ---- USER INPUT ----
-st.subheader("Or Enter Data Manually")
+# ---------------- BASIC CHECK ----------------
+if df is None or df.empty:
+    st.error("Dataset is empty ❌")
+    st.stop()
 
-pm25 = st.number_input("PM2.5", value=50.0)
-pm10 = st.number_input("PM10", value=80.0)
-no2 = st.number_input("NO2", value=30.0)
-lat = st.number_input("Latitude", value=28.61)
-lon = st.number_input("Longitude", value=77.23)
+# Limit size for performance
+if len(df) > 2000:
+    df = df.sample(1000)
 
-# ---- CREATE DF IF USER INPUT ----
-if not uploaded_file:
-    df = pd.DataFrame({
-        "pm2_5": [pm25],
-        "pm10": [pm10],
-        "no2": [no2],
-        "latitude": [lat],
-        "longitude": [lon]
-    })
+# ---------------- CITY DROPDOWN ----------------
+if 'city' in df.columns:
+    city = st.selectbox("🏙️ Select City", df['city'].unique())
+    df_city = df[df['city'] == city]
+else:
+    df_city = df
 
-# ---- CALCULATE AQI ----
-df["AQI"] = df[["pm2_5", "pm10", "no2"]].mean(axis=1)
+# ---------------- DATA PREVIEW ----------------
+with st.expander("📊 View Dataset"):
+    st.dataframe(df_city.head(50))
 
-# ---- SHOW DATA ----
-st.subheader("📊 Data Preview")
-st.write(df)
+# ---------------- AQI METRICS ----------------
+if 'aqi_index' in df_city.columns:
+    avg_aqi = df_city['aqi_index'].mean()
+    max_aqi = df_city['aqi_index'].max()
 
-# ---- AQI RESULT ----
-aqi_value = df["AQI"].iloc[0]
-category = get_aqi_category(aqi_value)
+    col1, col2 = st.columns(2)
+    col1.metric("Average AQI", round(avg_aqi, 2))
+    col2.metric("Max AQI", int(max_aqi))
 
-st.subheader("🌡 AQI Result")
-st.metric("AQI", round(aqi_value, 2))
-st.success(f"Air Quality: {category}")
+    # AQI COLOR STATUS
+    if avg_aqi <= 50:
+        st.success("🟢 Good Air Quality")
+    elif avg_aqi <= 100:
+        st.warning("🟡 Moderate Air Quality")
+    else:
+        st.error("🔴 Unhealthy Air")
 
-# ---- GRAPH ----
-st.subheader("📈 Pollution Levels")
+# ---------------- GRAPHS ----------------
+st.subheader("📈 Pollution Trends")
 
-fig, ax = plt.subplots()
-df[["pm2_5", "pm10", "no2"]].plot(kind="bar", ax=ax)
-st.pyplot(fig)
+if all(col in df_city.columns for col in ['pm2_5', 'pm10']):
+    st.line_chart(df_city[['pm2_5', 'pm10']])
 
-# ---- MAP ----
-st.subheader("🗺 Location Map")
-st.map(df.rename(columns={"latitude": "lat", "longitude": "lon"}))
+# ---------------- MAP ----------------
+st.subheader("🗺️ Pollution Map")
+
+if 'lat' in df_city.columns and 'lon' in df_city.columns:
+    st.map(df_city[['lat', 'lon']])
+else:
+    st.info("Latitude & Longitude not available")
+
+# ---------------- MODEL ----------------
+@st.cache_data
+def train_model(X, y):
+    model = LinearRegression()
+    model.fit(X, y)
+    return model
+
+features = ['pm2_5', 'pm10', 'no2', 'co']
+target = 'aqi_index'
+
+if all(col in df_city.columns for col in features + [target]):
+
+    df_model = df_city[features + [target]].dropna()
+
+    if len(df_model) > 10:
+
+        X = df_model[features]
+        y = df_model[target]
+
+        model = train_model(X, y)
+
+        st.success("🤖 Model trained successfully")
+
+        # ---------------- PREDICTION ----------------
+        st.subheader("🔮 Predict AQI")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            pm25 = st.number_input("PM2.5", value=50.0)
+            pm10 = st.number_input("PM10", value=80.0)
+
+        with col2:
+            no2 = st.number_input("NO2", value=30.0)
+            co = st.number_input("CO", value=1.0)
+
+        if st.button("Predict AQI"):
+
+            input_data = [[pm25, pm10, no2, co]]
+            pred = model.predict(input_data)[0]
+
+            st.subheader(f"Predicted AQI: {round(pred, 2)}")
+
+            # Prediction AQI Status
+            if pred <= 50:
+                st.success("🟢 Good Air Quality")
+            elif pred <= 100:
+                st.warning("🟡 Moderate Air Quality")
+            else:
+                st.error("🔴 Unhealthy Air")
+
+    else:
+        st.warning("Not enough data to train model")
+
+else:
+    st.warning("Required columns missing for ML")
+
+# ---------------- FOOTER ----------------
+st.markdown("---")
+st.markdown("Built for Hackathon 🚀 | AI + Data for Cleaner Air")
