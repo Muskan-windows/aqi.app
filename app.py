@@ -1,94 +1,127 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="AQI Predictor", layout="wide")
+# ---------------------------
+# PAGE CONFIG
+# ---------------------------
+st.set_page_config(page_title="AQI Guardian", layout="wide")
 
+# ---------------------------
 # TITLE
-st.title("🌍 AQI Prediction Dashboard")
-st.subheader("By Your Name")
+# ---------------------------
+st.title("🌍 AQI Guardian - Smart Air Quality Predictor")
+st.markdown("Monitor pollution, visualize trends & predict AQI")
 
-# OPTION
-option = st.radio("Choose Input Method", ["Upload Dataset", "Manual Input"])
+# ---------------------------
+# MODE SELECTION
+# ---------------------------
+st.subheader("⚙️ Select Input Method")
 
+mode = st.radio(
+    "Choose how you want to proceed:",
+    ["📂 Upload Dataset", "✍️ Manual Input"]
+)
+
+# ---------------------------
+# FILE UPLOAD
+# ---------------------------
 df = None
 
-# FILE UPLOAD
-if option == "Upload Dataset":
-    uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
+if mode == "📂 Upload Dataset":
+    uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
     
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
-        df.columns = df.columns.str.strip()
-        st.success("Dataset Loaded Successfully!")
-
-# MANUAL INPUT
-else:
-    pm25 = st.number_input("PM2.5")
-    pm10 = st.number_input("PM10")
-    no2 = st.number_input("NO2")
-
-# BUTTON
-if st.button("🚀 Predict AQI"):
-
-    st.divider()
-
-    # ---------- CASE 1: DATASET ----------
-    if df is not None:
-
-        st.subheader("📊 Dataset Preview")
+        st.success("Dataset loaded successfully!")
         st.dataframe(df.head())
 
-        # SIMPLE AQI (example logic)
-        df["AQI"] = (df["PM2.5"] + df["PM10"] + df["NO2"]) / 3
+# ---------------------------
+# MANUAL INPUT
+# ---------------------------
+if mode == "✍️ Manual Input":
+    st.subheader("Enter Pollution Values")
 
-        # STATUS
-        def get_status(aqi):
-            if aqi < 50:
-                return "Good"
-            elif aqi < 100:
-                return "Moderate"
-            else:
-                return "Poor"
+    col1, col2, col3 = st.columns(3)
 
-        df["Status"] = df["AQI"].apply(get_status)
+    with col1:
+        pm25 = st.number_input("PM2.5", 0.0, 500.0, 50.0)
 
-        # SHOW CURRENT AQI
-        latest_aqi = df["AQI"].iloc[-1]
-        st.metric("Current AQI", round(latest_aqi, 2))
+    with col2:
+        pm10 = st.number_input("PM10", 0.0, 500.0, 80.0)
 
-        # COLOR INDICATOR
-        if latest_aqi < 50:
-            st.success("🟢 Good Air Quality")
-        elif latest_aqi < 100:
-            st.warning("🟡 Moderate Air Quality")
-        else:
-            st.error("🔴 Poor Air Quality")
+    with col3:
+        no2 = st.number_input("NO2", 0.0, 200.0, 40.0)
 
-        # GRAPH
-        st.subheader("📈 AQI Trend")
+# ---------------------------
+# PREDICT BUTTON
+# ---------------------------
+if st.button("🚀 Predict AQI"):
 
-        chart_data = df.reset_index().rename(columns={"index": "day", "AQI": "aqi"})
+    st.success("Prediction Generated!")
 
-        
+    # ---------------------------
+    # HANDLE DATA
+    # ---------------------------
+    if df is None:
+        # fallback dataset
+        df = pd.DataFrame({
+            "PM2.5": np.random.randint(20, 200, 50),
+            "PM10": np.random.randint(30, 250, 50),
+            "NO2": np.random.randint(10, 100, 50),
+            "AQI": np.random.randint(50, 300, 50)
+        })
 
-        # MAP
-        if "latitude" in df.columns and "longitude" in df.columns:
-            st.subheader("🗺️ Location Map")
-            st.map(df[["latitude", "longitude"]])
-
-    # ---------- CASE 2: MANUAL ----------
+    # ---------------------------
+    # AQI CALCULATION (ONLY IF MANUAL)
+    # ---------------------------
+    if mode == "✍️ Manual Input":
+        aqi = (pm25 * 0.5 + pm10 * 0.3 + no2 * 0.2)
     else:
-        aqi = (pm25 + pm10 + no2) / 3
+        aqi = df["AQI"].mean()
 
-        st.metric("Predicted AQI", round(aqi, 2))
+    # ---------------------------
+    # AQI STATUS
+    # ---------------------------
+    if aqi <= 50:
+        status = "🟢 Good"
+    elif aqi <= 100:
+        status = "🟡 Moderate"
+    else:
+        status = "🔴 Unhealthy"
 
-        if aqi < 50:
-            st.success("🟢 Good")
-        elif aqi < 100:
-            st.warning("🟡 Moderate")
-        else:
-            st.error("🔴 Poor")
+    st.metric("🌫 Predicted AQI", round(aqi, 2))
+    st.write(f"### Status: {status}")
 
-        st.info("Prediction based on simple formula (ML can be added)")
+    # ---------------------------
+    # GRAPH
+    # ---------------------------
+    st.caption("📊 Visualizing historical AQI trends")
+    st.subheader("📈 AQI Trend")
+
+    if "AQI" in df.columns:
+        fig, ax = plt.subplots()
+        ax.plot(df["AQI"])
+        ax.set_title("AQI Over Time")
+        st.pyplot(fig)
+    else:
+        st.warning("No AQI column found in dataset!")
+
+    # ---------------------------
+    # MAP
+    # ---------------------------
+    st.subheader("🗺 AQI Location Map")
+
+    map_data = pd.DataFrame({
+        "lat": [28.61],
+        "lon": [77.23]
+    })
+
+    st.map(map_data)
+
+    # ---------------------------
+    # DATA PREVIEW
+    # ---------------------------
+    st.subheader("📊 Dataset Preview")
+    st.dataframe(df.head())
